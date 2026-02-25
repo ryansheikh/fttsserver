@@ -1,8 +1,18 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="FTTS Intelligence Dashboard", layout="wide")
-st.title("Pharmevo FTTS Commercial Intelligence")
+st.set_page_config(page_title="FTTS Intelligence", layout="wide")
+
+# ---------- Utility Functions ----------
+
+def format_number(num):
+    if num >= 1_000_000_000:
+        return f"{num/1_000_000_000:.2f}B"
+    elif num >= 1_000_000:
+        return f"{num/1_000_000:.2f}M"
+    elif num >= 1_000:
+        return f"{num/1_000:.2f}K"
+    return f"{num:.0f}"
 
 @st.cache_data
 def load_data():
@@ -22,48 +32,141 @@ def load_data():
 
 data = load_data()
 
-# KPIs
-c1, c2, c3 = st.columns(3)
-c1.metric("Total Spend", f"{data['monthly']['TotalSpend'].sum():,.0f}")
-c2.metric("Total Activities", f"{data['monthly']['Activities'].sum():,}")
-c3.metric("Avg Execution Delay (Days)", f"{data['delay']['AvgDelayDays'][0]:.2f}")
+# ---------- Sidebar Navigation ----------
+st.sidebar.title("FTTS Analytics Modules")
 
-# Trend
-st.subheader("Monthly Spend Trend")
-st.line_chart(data["monthly"]["TotalSpend"])
+page = st.sidebar.radio(
+    "Select Analysis",
+    [
+        "Executive Overview",
+        "Monthly Trend",
+        "Product Intelligence",
+        "Doctor Intelligence",
+        "Activity Analytics",
+        "Team Performance",
+        "Financial Allocation",
+        "Transfer Analysis",
+        "Audience Targeting",
+        "High Cost Monitoring"
+    ]
+)
 
-# Product Performance
-st.subheader("Top Products")
-st.bar_chart(data["product"].set_index("Product")["TotalSpend"].head(10))
+# ---------- EXECUTIVE OVERVIEW ----------
+if page == "Executive Overview":
+    st.title("Executive Overview")
 
-# Doctor Spend
-st.subheader("Top Doctors")
-st.bar_chart(data["doctor"].set_index("Doctor")["TotalSpend"].head(10))
+    total_spend = data["monthly"]["TotalSpend"].sum()
+    total_activities = data["monthly"]["Activities"].sum()
+    avg_delay = data["delay"]["AvgDelayDays"][0]
 
-# Activity Type
-st.subheader("Activity Cost Distribution")
-st.bar_chart(data["activity"].set_index("ActivityType")["TotalSpend"])
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Spend", format_number(total_spend))
+    c2.metric("Total Activities", format_number(total_activities))
+    c3.metric("Avg Execution Delay (Days)", f"{avg_delay:.1f}")
 
-# Team Performance
-st.subheader("Team Performance")
-st.bar_chart(data["team"].set_index("RequestorTeams")["TotalSpend"])
+    st.subheader("Spend Trend")
+    st.line_chart(data["monthly"].set_index("Month")["TotalSpend"])
 
-# Transfer Type
-st.subheader("Transfer Type Spend")
-st.bar_chart(data["transfer"].set_index("TransferType")["TotalSpend"])
+# ---------- MONTHLY TREND ----------
+elif page == "Monthly Trend":
+    st.title("Monthly Spend Analysis")
 
-# GL Head
-st.subheader("Financial Allocation by GL Head")
-st.bar_chart(data["gl"].set_index("GLHead")["TotalSpend"])
+    df = data["monthly"]
 
-# Target Audience
-st.subheader("Target Audience Spend")
-st.bar_chart(data["audience"].set_index("TargetAudience")["TotalSpend"])
+    c1, c2 = st.columns(2)
+    c1.metric("Total Spend", format_number(df["TotalSpend"].sum()))
+    c2.metric("Total Activities", format_number(df["Activities"].sum()))
 
-# Product Activity Mix Table
-st.subheader("Product Activity Mix")
-st.dataframe(data["mix"])
+    st.line_chart(df["TotalSpend"])
+    st.dataframe(df)
 
-# High Cost Activities Table
-st.subheader("Top Cost Activities")
-st.dataframe(data["high_cost"])
+# ---------- PRODUCT INTELLIGENCE ----------
+elif page == "Product Intelligence":
+    st.title("Product Performance")
+
+    df = data["product"].sort_values("TotalSpend", ascending=False)
+
+    c1, c2 = st.columns(2)
+    c1.metric("Total Product Spend", format_number(df["TotalSpend"].sum()))
+    c2.metric("Unique Products", df["Product"].nunique())
+
+    st.bar_chart(df.set_index("Product")["TotalSpend"].head(15))
+    st.dataframe(df)
+
+# ---------- DOCTOR INTELLIGENCE ----------
+elif page == "Doctor Intelligence":
+    st.title("Doctor Engagement Analysis")
+
+    df = data["doctor"].sort_values("TotalSpend", ascending=False)
+
+    c1, c2 = st.columns(2)
+    c1.metric("Total Doctor Spend", format_number(df["TotalSpend"].sum()))
+    c2.metric("Total Doctors", df["Doctor"].nunique())
+
+    st.bar_chart(df.set_index("Doctor")["TotalSpend"].head(15))
+    st.dataframe(df)
+
+# ---------- ACTIVITY ANALYTICS ----------
+elif page == "Activity Analytics":
+    st.title("Activity Cost Intelligence")
+
+    df = data["activity"]
+
+    c1, c2 = st.columns(2)
+    c1.metric("Total Activity Spend", format_number(df["TotalSpend"].sum()))
+    c2.metric("Total Activity Types", df["ActivityType"].nunique())
+
+    st.bar_chart(df.set_index("ActivityType")["TotalSpend"])
+    st.dataframe(df)
+
+# ---------- TEAM PERFORMANCE ----------
+elif page == "Team Performance":
+    st.title("Team Performance Analysis")
+
+    df = data["team"]
+
+    c1, c2 = st.columns(2)
+    c1.metric("Total Team Spend", format_number(df["TotalSpend"].sum()))
+    c2.metric("Teams", df["RequestorTeams"].nunique())
+
+    st.bar_chart(df.set_index("RequestorTeams")["TotalSpend"])
+    st.dataframe(df)
+
+# ---------- FINANCIAL ALLOCATION ----------
+elif page == "Financial Allocation":
+    st.title("GL Head Allocation")
+
+    df = data["gl"]
+
+    st.metric("Total Allocated Budget", format_number(df["TotalSpend"].sum()))
+    st.bar_chart(df.set_index("GLHead")["TotalSpend"])
+    st.dataframe(df)
+
+# ---------- TRANSFER ANALYSIS ----------
+elif page == "Transfer Analysis":
+    st.title("Transfer Type Analysis")
+
+    df = data["transfer"]
+
+    st.metric("Total Transfer Spend", format_number(df["TotalSpend"].sum()))
+    st.bar_chart(df.set_index("TransferType")["TotalSpend"])
+    st.dataframe(df)
+
+# ---------- AUDIENCE TARGETING ----------
+elif page == "Audience Targeting":
+    st.title("Target Audience Strategy")
+
+    df = data["audience"]
+
+    st.metric("Total Audience Spend", format_number(df["TotalSpend"].sum()))
+    st.bar_chart(df.set_index("TargetAudience")["TotalSpend"])
+    st.dataframe(df)
+
+# ---------- HIGH COST MONITORING ----------
+elif page == "High Cost Monitoring":
+    st.title("High Cost Activity Monitoring")
+
+    df = data["high_cost"]
+
+    st.metric("Max Single Activity Cost", format_number(df["Amount"].max()))
+    st.dataframe(df)
