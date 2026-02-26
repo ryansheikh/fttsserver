@@ -41,13 +41,23 @@ def load_data():
     doctor["Doctor"] = clean_category(doctor["Doctor"])
     audience["TargetAudience"] = clean_category(audience["TargetAudience"])
 
-    # Fiscal Year (July → June)
+    # ========================================================
+    # ✅ FISCAL YEAR (START YEAR LABELING)
+    # 1 July 2017 → 30 June 2018 = FY 2017
+    # ========================================================
+
     monthly["FiscalYear"] = monthly.apply(
-        lambda x: x["Year"] + 1 if x["Month"] >= 7 else x["Year"], axis=1
+        lambda x: x["Year"] if x["Month"] >= 7 else x["Year"] - 1,
+        axis=1
     )
 
-    # Keep complete fiscal years only
-    monthly = monthly[(monthly["FiscalYear"] >= 2018) & (monthly["FiscalYear"] <= 2025)]
+    # Keep COMPLETE fiscal years only
+    monthly = monthly[(monthly["FiscalYear"] >= 2017) & (monthly["FiscalYear"] <= 2024)]
+
+    # Optional readable label
+    monthly["FY_Label"] = monthly["FiscalYear"].apply(
+        lambda y: f"FY {y} (Jul {y} – Jun {y+1})"
+    )
 
     return monthly, product, doctor, gl, audience, delay
 
@@ -74,7 +84,7 @@ page = st.sidebar.radio("Select Module", [
 if page == "Executive Overview":
     st.title("Executive Overview — Fiscal Years")
 
-    fy_spend = monthly.groupby("FiscalYear")["TotalSpend"].sum()
+    fy_spend = monthly.groupby("FY_Label")["TotalSpend"].sum()
     total_activities = monthly["Activities"].sum()
 
     c1, c2, c3 = st.columns(3)
@@ -95,7 +105,7 @@ if page == "Executive Overview":
 elif page == "Yearly Spend":
     st.title("Fiscal Year Spend Analysis")
 
-    fy_spend = monthly.groupby("FiscalYear")["TotalSpend"].sum()
+    fy_spend = monthly.groupby("FY_Label")["TotalSpend"].sum()
     fy_growth = fy_spend.pct_change() * 100
 
     c1, c2 = st.columns(2)
