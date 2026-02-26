@@ -3,7 +3,7 @@ import pandas as pd
 
 st.set_page_config(page_title="FTTS Intelligence", layout="wide")
 
-# ---------- Utility Functions ----------
+# ---------- Utility ----------
 
 def format_number(num):
     if num >= 1_000_000_000:
@@ -17,141 +17,149 @@ def format_number(num):
 def clean_category(series):
     return series.replace(["N/P", "", "NULL"], "Unknown")
 
+# ---------- Load Data ----------
+
 @st.cache_data
 def load_data():
     monthly = pd.read_csv("clean_monthly_trend.csv")
     product = pd.read_csv("clean_product_performance.csv")
     doctor = pd.read_csv("clean_doctor_spend.csv")
-    activity = pd.read_csv("clean_activity_analysis.csv")
-    team = pd.read_csv("clean_team_performance.csv")
-    transfer = pd.read_csv("clean_transfer_type.csv")
     gl = pd.read_csv("clean_glhead_spend.csv")
     audience = pd.read_csv("clean_target_audience.csv")
-    high_cost = pd.read_csv("clean_high_cost_activities.csv")
     delay = pd.read_csv("clean_execution_delay.csv")
-
-    # Year filter → complete years only
-    monthly = monthly[(monthly["Year"] >= 2018) & (monthly["Year"] <= 2025)]
 
     # Clean categories
     doctor["Doctor"] = clean_category(doctor["Doctor"])
     audience["TargetAudience"] = clean_category(audience["TargetAudience"])
-    high_cost["Doctor"] = clean_category(high_cost["Doctor"])
 
-    return monthly, product, doctor, activity, team, transfer, gl, audience, high_cost, delay
+    # ---------- Fiscal Year Calculation ----------
+    monthly["FiscalYear"] = monthly.apply(
+        lambda x: x["Year"] + 1 if x["Month"] >= 7 else x["Year"], axis=1
+    )
 
-monthly, product, doctor, activity, team, transfer, gl, audience, high_cost, delay = load_data()
+    # Keep complete fiscal years only
+    monthly = monthly[(monthly["FiscalYear"] >= 2018) & (monthly["FiscalYear"] <= 2025)]
+
+    return monthly, product, doctor, gl, audience, delay
+
+monthly, product, doctor, gl, audience, delay = load_data()
 
 # ---------- Sidebar ----------
-st.sidebar.title("Analytics Navigation")
-
+st.sidebar.title("FTTS Analytics")
 page = st.sidebar.radio("Select Module", [
     "Executive Overview",
-    "Yearly Performance",
+    "Yearly Spend",
     "Doctor Engagement",
     "Product Intelligence",
-    "Activity Efficiency",
     "Financial Allocation",
-    "Audience Strategy",
-    "Risk Monitoring"
+    "Audience Strategy"
 ])
 
-# ---------- EXECUTIVE OVERVIEW ----------
-if page == "Executive Overview":
-    st.title("Executive Overview (2018–2025)")
+# ============================================================
+# EXECUTIVE OVERVIEW (FISCAL YEARS)
+# ============================================================
 
-    total_spend = monthly["TotalSpend"].sum()
-    total_activities = monthly["Activities"].sum()
-    avg_delay = delay["AvgDelayDays"][0]
+if page == "Executive Overview":
+    st.title("Executive Overview (Fiscal Years)")
+
+    fy_spend = monthly.groupby("FiscalYear")["TotalSpend"].sum()
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Total Spend", format_number(total_spend))
-    c2.metric("Total Activities", format_number(total_activities))
-    c3.metric("Avg Execution Delay", f"{avg_delay:.1f} Days")
+    c1.metric("Total Spend", format_number(fy_spend.sum()))
+    c2.metric("Total Activities", format_number(monthly["Activities"].sum()))
+    c3.metric("Avg Execution Delay", f"{delay['AvgDelayDays'][0]:.1f} Days")
 
-    yearly = monthly.groupby("Year")["TotalSpend"].sum()
-    st.subheader("Yearly Spend Trend")
-    st.line_chart(yearly)
+    st.subheader("Fiscal Year Spend Trend")
+    st.line_chart(fy_spend)
 
-    st.subheader("Spend Distribution by Year")
-    st.bar_chart(yearly)
+    st.subheader("Fiscal Year Comparison")
+    st.bar_chart(fy_spend)
 
-# ---------- YEARLY PERFORMANCE ----------
-elif page == "Yearly Performance":
-    st.title("Year-over-Year Performance")
+# ============================================================
+# YEARLY SPEND (FISCAL)
+# ============================================================
 
-    yearly_spend = monthly.groupby("Year")["TotalSpend"].sum()
-    yoy_growth = yearly_spend.pct_change() * 100
+elif page == "Yearly Spend":
+    st.title("Fiscal Year Spend Analysis")
+
+    fy_spend = monthly.groupby("FiscalYear")["TotalSpend"].sum()
+    fy_growth = fy_spend.pct_change() * 100
 
     c1, c2 = st.columns(2)
-    c1.metric("Best Year Spend", format_number(yearly_spend.max()))
-    c2.metric("Highest Growth %", f"{yoy_growth.max():.1f}%")
+    c1.metric("Best Fiscal Year", format_number(fy_spend.max()))
+    c2.metric("Highest Growth", f"{fy_growth.max():.1f}%")
 
-    st.subheader("YoY Spend Comparison")
-    st.bar_chart(yearly_spend)
+    st.bar_chart(fy_spend)
+    st.line_chart(fy_growth)
 
-    st.subheader("Growth Rate %")
-    st.line_chart(yoy_growth)
+# ============================================================
+# DOCTOR ENGAGEMENT (DESCENDING + NON-CONGESTED)
+# ============================================================
 
-# ---------- DOCTOR ENGAGEMENT ----------
 elif page == "Doctor Engagement":
-    st.title("Doctor Engagement Intelligence")
+    st.title("Doctor Engagement")
 
     df = doctor[doctor["Doctor"] != "Unknown"]
     df = df.sort_values("TotalSpend", ascending=False)
 
-    c1, c2 = st.columns(2)
-    c1.metric("Total Doctor Spend", format_number(df["TotalSpend"].sum()))
-    c2.metric("Active Doctors", df["Doctor"].nunique())
+    top_n = st.slider("Show Top Doctors", 5, 30, 10)
+    st.metric("Total Doctor Spend", format_number(df["TotalSpend"].sum()))
 
-    st.subheader("Top Doctors by Investment")
-    st.bar_chart(df.set_index("Doctor")["TotalSpend"].head(15))
+    st.bar_chart(df.set_index("Doctor")["TotalSpend"].head(top_n))
+    st.dataframe(df)
 
-    st.subheader("Doctor Spend Distribution")
-    st.line_chart(df["TotalSpend"])
+# ============================================================
+# PRODUCT INTELLIGENCE (DESCENDING)
+# ============================================================
 
-# ---------- PRODUCT INTELLIGENCE ----------
 elif page == "Product Intelligence":
-    st.title("Product Investment Strategy")
+    st.title("Product Investment")
 
     df = product.sort_values("TotalSpend", ascending=False)
 
-    st.metric("Total Product Investment", format_number(df["TotalSpend"].sum()))
-    st.bar_chart(df.set_index("Product")["TotalSpend"].head(15))
+    top_n = st.slider("Show Top Products", 5, 30, 10)
+    st.metric("Total Product Spend", format_number(df["TotalSpend"].sum()))
 
-    st.subheader("Product Activity Comparison")
-    st.line_chart(df["TotalSpend"])
+    st.bar_chart(df.set_index("Product")["TotalSpend"].head(top_n))
+    st.dataframe(df)
 
-# ---------- ACTIVITY EFFICIENCY ----------
-elif page == "Activity Efficiency":
-    st.title("Activity Cost Intelligence")
+# ============================================================
+# FINANCIAL ALLOCATION (DECONGESTED + FULL ACCESS)
+# ============================================================
 
-    st.metric("Total Activity Spend", format_number(activity["TotalSpend"].sum()))
-    st.bar_chart(activity.set_index("ActivityType")["TotalSpend"])
-    st.line_chart(activity["AvgCost"])
-
-# ---------- FINANCIAL ----------
 elif page == "Financial Allocation":
-    st.title("Budget Allocation by GL Head")
+    st.title("GL Head Financial Allocation")
 
-    st.metric("Total Budget", format_number(gl["TotalSpend"].sum()))
-    st.bar_chart(gl.set_index("GLHead")["TotalSpend"])
+    df = gl.sort_values("TotalSpend", ascending=False)
 
-# ---------- AUDIENCE ----------
+    st.metric("Total Budget", format_number(df["TotalSpend"].sum()))
+
+    top_n = st.slider("Show Top GL Heads", 5, 30, 10)
+    st.bar_chart(df.set_index("GLHead")["TotalSpend"].head(top_n))
+
+    st.subheader("Inspect Specific GL Head")
+    selected = st.selectbox("Select GL Head", df["GLHead"])
+    st.line_chart(df[df["GLHead"] == selected]["TotalSpend"])
+
+    st.dataframe(df)
+
+# ============================================================
+# AUDIENCE STRATEGY (TOP + SELECTABLE)
+# ============================================================
+
 elif page == "Audience Strategy":
-    st.title("Audience Targeting Analysis")
+    st.title("Audience Investment Strategy")
 
     df = audience[audience["TargetAudience"] != "Unknown"]
+    df = df.sort_values("TotalSpend", ascending=False)
+
     st.metric("Total Audience Spend", format_number(df["TotalSpend"].sum()))
 
-    st.bar_chart(df.set_index("TargetAudience")["TotalSpend"])
-    st.line_chart(df["TotalSpend"])
+    top_n = st.slider("Show Top Audiences", 5, 30, 10)
+    st.bar_chart(df.set_index("TargetAudience")["TotalSpend"].head(top_n))
 
-# ---------- RISK ----------
-elif page == "Risk Monitoring":
-    st.title("High Cost Activity Monitoring")
+    st.subheader("Analyze Specific Audience")
+    selected = st.selectbox("Select Audience", df["TargetAudience"])
+    st.line_chart(df[df["TargetAudience"] == selected]["TotalSpend"])
 
-    df = high_cost[high_cost["Doctor"] != "Unknown"]
-
-    st.metric("Maximum Activity Cost", format_number(df["Amount"].max()))
-    st.dataframe(df.sort_values("Amount", ascending=False))
+    st.dataframe(df)
