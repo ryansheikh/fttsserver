@@ -1,23 +1,33 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="FTTS Intelligence", layout="wide")
+st.set_page_config(page_title="FTTS Intelligence — Pharmevo", layout="wide")
 
-# ---------- Utility ----------
+# ============================================================
+# UNIVERSAL NUMBER FORMATTER (K M B)
+# ============================================================
 
 def format_number(num):
-    if num >= 1_000_000_000:
+    num = float(num)
+    if abs(num) >= 1_000_000_000:
         return f"{num/1_000_000_000:.2f}B"
-    elif num >= 1_000_000:
+    elif abs(num) >= 1_000_000:
         return f"{num/1_000_000:.2f}M"
-    elif num >= 1_000:
+    elif abs(num) >= 1_000:
         return f"{num/1_000:.2f}K"
     return f"{num:.0f}"
 
 def clean_category(series):
     return series.replace(["N/P", "", "NULL"], "Unknown")
 
-# ---------- Load Data ----------
+def format_dataframe(df, col):
+    temp = df.copy()
+    temp[col] = temp[col].apply(format_number)
+    return temp
+
+# ============================================================
+# LOAD DATA
+# ============================================================
 
 @st.cache_data
 def load_data():
@@ -28,11 +38,10 @@ def load_data():
     audience = pd.read_csv("clean_target_audience.csv")
     delay = pd.read_csv("clean_execution_delay.csv")
 
-    # Clean categories
     doctor["Doctor"] = clean_category(doctor["Doctor"])
     audience["TargetAudience"] = clean_category(audience["TargetAudience"])
 
-    # ---------- Fiscal Year Calculation ----------
+    # Fiscal Year (July → June)
     monthly["FiscalYear"] = monthly.apply(
         lambda x: x["Year"] + 1 if x["Month"] >= 7 else x["Year"], axis=1
     )
@@ -44,8 +53,11 @@ def load_data():
 
 monthly, product, doctor, gl, audience, delay = load_data()
 
-# ---------- Sidebar ----------
-st.sidebar.title("FTTS Analytics")
+# ============================================================
+# SIDEBAR NAVIGATION
+# ============================================================
+
+st.sidebar.title("FTTS Intelligence")
 page = st.sidebar.radio("Select Module", [
     "Executive Overview",
     "Yearly Spend",
@@ -60,13 +72,14 @@ page = st.sidebar.radio("Select Module", [
 # ============================================================
 
 if page == "Executive Overview":
-    st.title("Executive Overview (Fiscal Years)")
+    st.title("Executive Overview — Fiscal Years")
 
     fy_spend = monthly.groupby("FiscalYear")["TotalSpend"].sum()
+    total_activities = monthly["Activities"].sum()
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Total Spend", format_number(fy_spend.sum()))
-    c2.metric("Total Activities", format_number(monthly["Activities"].sum()))
+    c2.metric("Total Activities", format_number(total_activities))
     c3.metric("Avg Execution Delay", f"{delay['AvgDelayDays'][0]:.1f} Days")
 
     st.subheader("Fiscal Year Spend Trend")
@@ -76,7 +89,7 @@ if page == "Executive Overview":
     st.bar_chart(fy_spend)
 
 # ============================================================
-# YEARLY SPEND (FISCAL)
+# YEARLY SPEND
 # ============================================================
 
 elif page == "Yearly Spend":
@@ -86,45 +99,47 @@ elif page == "Yearly Spend":
     fy_growth = fy_spend.pct_change() * 100
 
     c1, c2 = st.columns(2)
-    c1.metric("Best Fiscal Year", format_number(fy_spend.max()))
+    c1.metric("Highest Spend", format_number(fy_spend.max()))
     c2.metric("Highest Growth", f"{fy_growth.max():.1f}%")
 
     st.bar_chart(fy_spend)
     st.line_chart(fy_growth)
 
 # ============================================================
-# DOCTOR ENGAGEMENT (DESCENDING + NON-CONGESTED)
+# DOCTOR ENGAGEMENT
 # ============================================================
 
 elif page == "Doctor Engagement":
-    st.title("Doctor Engagement")
+    st.title("Doctor Engagement Analysis")
 
     df = doctor[doctor["Doctor"] != "Unknown"]
     df = df.sort_values("TotalSpend", ascending=False)
 
-    top_n = st.slider("Show Top Doctors", 5, 30, 10)
     st.metric("Total Doctor Spend", format_number(df["TotalSpend"].sum()))
 
+    top_n = st.slider("Show Top Doctors", 5, 30, 10)
     st.bar_chart(df.set_index("Doctor")["TotalSpend"].head(top_n))
-    st.dataframe(df)
+
+    st.dataframe(format_dataframe(df, "TotalSpend"))
 
 # ============================================================
-# PRODUCT INTELLIGENCE (DESCENDING)
+# PRODUCT INTELLIGENCE
 # ============================================================
 
 elif page == "Product Intelligence":
-    st.title("Product Investment")
+    st.title("Product Investment Intelligence")
 
     df = product.sort_values("TotalSpend", ascending=False)
 
-    top_n = st.slider("Show Top Products", 5, 30, 10)
     st.metric("Total Product Spend", format_number(df["TotalSpend"].sum()))
 
+    top_n = st.slider("Show Top Products", 5, 30, 10)
     st.bar_chart(df.set_index("Product")["TotalSpend"].head(top_n))
-    st.dataframe(df)
+
+    st.dataframe(format_dataframe(df, "TotalSpend"))
 
 # ============================================================
-# FINANCIAL ALLOCATION (DECONGESTED + FULL ACCESS)
+# FINANCIAL ALLOCATION
 # ============================================================
 
 elif page == "Financial Allocation":
@@ -132,19 +147,20 @@ elif page == "Financial Allocation":
 
     df = gl.sort_values("TotalSpend", ascending=False)
 
-    st.metric("Total Budget", format_number(df["TotalSpend"].sum()))
+    st.metric("Total Budget Allocation", format_number(df["TotalSpend"].sum()))
 
     top_n = st.slider("Show Top GL Heads", 5, 30, 10)
     st.bar_chart(df.set_index("GLHead")["TotalSpend"].head(top_n))
 
     st.subheader("Inspect Specific GL Head")
     selected = st.selectbox("Select GL Head", df["GLHead"])
-    st.line_chart(df[df["GLHead"] == selected]["TotalSpend"])
+    value = df[df["GLHead"] == selected]["TotalSpend"].sum()
+    st.metric("Selected GL Spend", format_number(value))
 
-    st.dataframe(df)
+    st.dataframe(format_dataframe(df, "TotalSpend"))
 
 # ============================================================
-# AUDIENCE STRATEGY (TOP + SELECTABLE)
+# AUDIENCE STRATEGY
 # ============================================================
 
 elif page == "Audience Strategy":
@@ -158,8 +174,9 @@ elif page == "Audience Strategy":
     top_n = st.slider("Show Top Audiences", 5, 30, 10)
     st.bar_chart(df.set_index("TargetAudience")["TotalSpend"].head(top_n))
 
-    st.subheader("Analyze Specific Audience")
+    st.subheader("Inspect Specific Audience")
     selected = st.selectbox("Select Audience", df["TargetAudience"])
-    st.line_chart(df[df["TargetAudience"] == selected]["TotalSpend"])
+    value = df[df["TargetAudience"] == selected]["TotalSpend"].sum()
+    st.metric("Selected Audience Spend", format_number(value))
 
-    st.dataframe(df)
+    st.dataframe(format_dataframe(df, "TotalSpend"))
