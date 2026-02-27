@@ -42,7 +42,7 @@ def load_data():
     audience["TargetAudience"] = clean_category(audience["TargetAudience"])
 
     # ========================================================
-    # ✅ FISCAL YEAR (START YEAR LABELING)
+    # FISCAL YEAR (START YEAR LABELING)
     # 1 July 2017 → 30 June 2018 = FY 2017
     # ========================================================
 
@@ -51,17 +51,32 @@ def load_data():
         axis=1
     )
 
-    # Keep COMPLETE fiscal years only
-    monthly = monthly[(monthly["FiscalYear"] >= 2017) & (monthly["FiscalYear"] <= 2024)]
+    # Keep all fiscal years from 2017 onward (include partial FY 2025)
+    monthly = monthly[monthly["FiscalYear"] >= 2017]
 
-    # Optional readable label
-    monthly["FY_Label"] = monthly["FiscalYear"].apply(
-        lambda y: f"FY {y} (Jul {y} – Jun {y+1})"
-    )
+    # Detect latest data point → for progress indicator
+    latest_year = monthly["Year"].max()
+    latest_month = monthly[monthly["Year"] == latest_year]["Month"].max()
 
-    return monthly, product, doctor, gl, audience, delay
+    # Fiscal progress calculation (July = 1, June = 12)
+    if latest_month >= 7:
+        fiscal_progress = (latest_month - 6) / 12
+        current_fy = latest_year
+    else:
+        fiscal_progress = (latest_month + 6) / 12
+        current_fy = latest_year - 1
 
-monthly, product, doctor, gl, audience, delay = load_data()
+    # Fiscal labels
+    def make_label(y):
+        if y == current_fy:
+            return f"FY {y} (Partial)"
+        return f"FY {y} (Jul {y} – Jun {y+1})"
+
+    monthly["FY_Label"] = monthly["FiscalYear"].apply(make_label)
+
+    return monthly, product, doctor, gl, audience, delay, fiscal_progress, current_fy
+
+monthly, product, doctor, gl, audience, delay, fiscal_progress, current_fy = load_data()
 
 # ============================================================
 # SIDEBAR NAVIGATION
@@ -78,7 +93,7 @@ page = st.sidebar.radio("Select Module", [
 ])
 
 # ============================================================
-# EXECUTIVE OVERVIEW (FISCAL YEARS)
+# EXECUTIVE OVERVIEW
 # ============================================================
 
 if page == "Executive Overview":
@@ -91,6 +106,10 @@ if page == "Executive Overview":
     c1.metric("Total Spend", format_number(fy_spend.sum()))
     c2.metric("Total Activities", format_number(total_activities))
     c3.metric("Avg Execution Delay", f"{delay['AvgDelayDays'][0]:.1f} Days")
+
+    st.subheader("Current Fiscal Year Progress")
+    st.progress(float(fiscal_progress))
+    st.caption(f"FY {current_fy} completion: {fiscal_progress*100:.1f}%")
 
     st.subheader("Fiscal Year Spend Trend")
     st.line_chart(fy_spend)
